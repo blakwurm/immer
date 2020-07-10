@@ -1,15 +1,11 @@
 import {
-	ImmerScope,
 	DRAFT_STATE,
 	isDraftable,
 	NOTHING,
-	PatchPath,
 	each,
 	has,
 	freeze,
-	ImmerState,
 	isDraft,
-	SetState,
 	set,
 	ProxyTypeES5Object,
 	ProxyTypeES5Array,
@@ -21,10 +17,9 @@ import {
 	shallowCopy,
 	__DEV__
 } from "../internal.js"
-
-export function processResult(result: any, scope: ImmerScope) {
+export function processResult(result, scope) {
 	scope.unfinalizedDrafts_ = scope.drafts_.length
-	const baseDraft = scope.drafts_![0]
+	const baseDraft = scope.drafts_[0]
 	const isReplaced = result !== undefined && result !== baseDraft
 	if (!scope.immer_.useProxies_)
 		getPlugin("ES5").willFinalizeES5_(scope, result, isReplaced)
@@ -43,7 +38,7 @@ export function processResult(result: any, scope: ImmerScope) {
 				baseDraft[DRAFT_STATE],
 				result,
 				scope.patches_,
-				scope.inversePatches_!
+				scope.inversePatches_
 			)
 		}
 	} else {
@@ -52,16 +47,14 @@ export function processResult(result: any, scope: ImmerScope) {
 	}
 	revokeScope(scope)
 	if (scope.patches_) {
-		scope.patchListener_!(scope.patches_, scope.inversePatches_!)
+		scope.patchListener_(scope.patches_, scope.inversePatches_)
 	}
 	return result !== NOTHING ? result : undefined
 }
-
-function finalize(rootScope: ImmerScope, value: any, path?: PatchPath) {
+function finalize(rootScope, value, path) {
 	// Don't recurse in tho recursive data structures
 	if (isFrozen(value)) return value
-
-	const state: ImmerState = value[DRAFT_STATE]
+	const state = value[DRAFT_STATE]
 	// A plain object, might need freezing, might contain drafts
 	if (!state) {
 		each(
@@ -89,7 +82,7 @@ function finalize(rootScope: ImmerScope, value: any, path?: PatchPath) {
 				? (state.copy_ = shallowCopy(state.draft_))
 				: state.copy_
 		// finalize all children of the copy
-		each(result as any, (key, childValue) =>
+		each(result, (key, childValue) =>
 			finalizeProperty(rootScope, state, result, key, childValue, path)
 		)
 		// everything inside is frozen, we can freeze here
@@ -100,29 +93,28 @@ function finalize(rootScope: ImmerScope, value: any, path?: PatchPath) {
 				state,
 				path,
 				rootScope.patches_,
-				rootScope.inversePatches_!
+				rootScope.inversePatches_
 			)
 		}
 	}
 	return state.copy_
 }
-
 function finalizeProperty(
-	rootScope: ImmerScope,
-	parentState: undefined | ImmerState,
-	targetObject: any,
-	prop: string | number,
-	childValue: any,
-	rootPath?: PatchPath
+	rootScope,
+	parentState,
+	targetObject,
+	prop,
+	childValue,
+	rootPath
 ) {
 	if (__DEV__ && childValue === targetObject) die(5)
 	if (isDraft(childValue)) {
 		const path =
 			rootPath &&
 			parentState &&
-			parentState!.type_ !== ProxyTypeSet && // Set objects are atomic since they have no keys.
-			!has((parentState as Exclude<ImmerState, SetState>).assigned_!, prop) // Skip deep patches for assigned keys.
-				? rootPath!.concat(prop)
+			parentState.type_ !== ProxyTypeSet && // Set objects are atomic since they have no keys.
+			!has(parentState.assigned_, prop) // Skip deep patches for assigned keys.
+				? rootPath.concat(prop)
 				: undefined
 		// Drafts owned by `scope` are finalized here.
 		const res = finalize(rootScope, childValue, path)
@@ -149,8 +141,7 @@ function finalizeProperty(
 			maybeFreeze(rootScope, childValue)
 	}
 }
-
-function maybeFreeze(scope: ImmerScope, value: any, deep = false) {
+function maybeFreeze(scope, value, deep = false) {
 	if (scope.immer_.autoFreeze_ && scope.canAutoFreeze_) {
 		freeze(value, deep)
 	}

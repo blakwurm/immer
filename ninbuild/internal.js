@@ -9,5 +9,4 @@ export * from "./core/finalize.js"
 export * from "./core/proxy.js"
 export * from "./core/immerClass.js"
 export * from "./core/current.js"
-
 export let __DEV__ = true

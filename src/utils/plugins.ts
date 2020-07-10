@@ -11,8 +11,9 @@ import {
 	ProxyTypeES5Object,
 	ProxyTypeMap,
 	ProxyTypeSet,
-	die
-} from "../internal"
+	die,
+	__DEV__
+} from "../internal.js"
 
 /** Plugin utilities */
 const plugins: {

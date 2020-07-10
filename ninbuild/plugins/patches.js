@@ -1,13 +1,4 @@
 import {
-	ImmerState,
-	Patch,
-	SetState,
-	ES5ArrayState,
-	ProxyArrayState,
-	MapState,
-	ES5ObjectState,
-	ProxyObjectState,
-	PatchPath,
 	get,
 	each,
 	has,
@@ -25,21 +16,13 @@ import {
 	ArchtypeSet,
 	ArchtypeArray,
 	die,
-	isDraft,
-	__DEV__
+	isDraft
 } from "../internal.js"
-
 export function enablePatches() {
 	const REPLACE = "replace"
 	const ADD = "add"
 	const REMOVE = "remove"
-
-	function generatePatches_(
-		state: ImmerState,
-		basePath: PatchPath,
-		patches: Patch[],
-		inversePatches: Patch[]
-	): void {
+	function generatePatches_(state, basePath, patches, inversePatches) {
 		switch (state.type_) {
 			case ProxyTypeProxyObject:
 			case ProxyTypeES5Object:
@@ -54,31 +37,18 @@ export function enablePatches() {
 			case ProxyTypeProxyArray:
 				return generateArrayPatches(state, basePath, patches, inversePatches)
 			case ProxyTypeSet:
-				return generateSetPatches(
-					(state as any) as SetState,
-					basePath,
-					patches,
-					inversePatches
-				)
+				return generateSetPatches(state, basePath, patches, inversePatches)
 		}
 	}
-
-	function generateArrayPatches(
-		state: ES5ArrayState | ProxyArrayState,
-		basePath: PatchPath,
-		patches: Patch[],
-		inversePatches: Patch[]
-	) {
+	function generateArrayPatches(state, basePath, patches, inversePatches) {
 		let {base_, assigned_} = state
-		let copy_ = state.copy_!
-
+		let copy_ = state.copy_
 		// Reduce complexity by ensuring `base` is never longer.
 		if (copy_.length < base_.length) {
 			// @ts-ignore
 			;[base_, copy_] = [copy_, base_]
 			;[patches, inversePatches] = [inversePatches, patches]
 		}
-
 		// Process replaced indices.
 		for (let i = 0; i < base_.length; i++) {
 			if (assigned_[i] && copy_[i] !== base_[i]) {
@@ -97,7 +67,6 @@ export function enablePatches() {
 				})
 			}
 		}
-
 		// Process added indices.
 		for (let i = base_.length; i < copy_.length; i++) {
 			const path = basePath.concat([i])
@@ -117,21 +86,20 @@ export function enablePatches() {
 			})
 		}
 	}
-
 	// This is used for both Map objects and normal objects.
 	function generatePatchesFromAssigned(
-		state: MapState | ES5ObjectState | ProxyObjectState,
-		basePath: PatchPath,
-		patches: Patch[],
-		inversePatches: Patch[]
+		state,
+		basePath,
+		patches,
+		inversePatches
 	) {
 		const {base_, copy_} = state
-		each(state.assigned_!, (key, assignedValue) => {
+		each(state.assigned_, (key, assignedValue) => {
 			const origValue = get(base_, key)
-			const value = get(copy_!, key)
+			const value = get(copy_, key)
 			const op = !assignedValue ? REMOVE : has(base_, key) ? REPLACE : ADD
 			if (origValue === value && op === REPLACE) return
-			const path = basePath.concat(key as any)
+			const path = basePath.concat(key)
 			patches.push(op === REMOVE ? {op, path} : {op, path, value})
 			inversePatches.push(
 				op === ADD
@@ -142,18 +110,11 @@ export function enablePatches() {
 			)
 		})
 	}
-
-	function generateSetPatches(
-		state: SetState,
-		basePath: PatchPath,
-		patches: Patch[],
-		inversePatches: Patch[]
-	) {
+	function generateSetPatches(state, basePath, patches, inversePatches) {
 		let {base_, copy_} = state
-
 		let i = 0
-		base_.forEach((value: any) => {
-			if (!copy_!.has(value)) {
+		base_.forEach(value => {
+			if (!copy_.has(value)) {
 				const path = basePath.concat([i])
 				patches.push({
 					op: REMOVE,
@@ -169,7 +130,7 @@ export function enablePatches() {
 			i++
 		})
 		i = 0
-		copy_!.forEach((value: any) => {
+		copy_.forEach(value => {
 			if (!base_.has(value)) {
 				const path = basePath.concat([i])
 				patches.push({
@@ -186,13 +147,12 @@ export function enablePatches() {
 			i++
 		})
 	}
-
 	function generateReplacementPatches_(
-		rootState: ImmerState,
-		replacement: any,
-		patches: Patch[],
-		inversePatches: Patch[]
-	): void {
+		rootState,
+		replacement,
+		patches,
+		inversePatches
+	) {
 		patches.push({
 			op: REPLACE,
 			path: [],
@@ -204,17 +164,14 @@ export function enablePatches() {
 			value: rootState.base_
 		})
 	}
-
-	function applyPatches_<T>(draft: T, patches: Patch[]): T {
+	function applyPatches_(draft, patches) {
 		patches.forEach(patch => {
 			const {path, op} = patch
-
-			let base: any = draft
+			let base = draft
 			for (let i = 0; i < path.length - 1; i++) {
 				base = get(base, path[i])
 				if (typeof base !== "object") die(15, path.join("/"))
 			}
-
 			const type = getArchtype(base)
 			const value = deepClonePatchValue(patch.value) // used to clone patch to ensure original patch is not modified, see #411
 			const key = path[path.length - 1]
@@ -236,7 +193,7 @@ export function enablePatches() {
 				case ADD:
 					switch (type) {
 						case ArchtypeArray:
-							return base.splice(key as any, 0, value)
+							return base.splice(key, 0, value)
 						case ArchtypeMap:
 							return base.set(key, value)
 						case ArchtypeSet:
@@ -247,7 +204,7 @@ export function enablePatches() {
 				case REMOVE:
 					switch (type) {
 						case ArchtypeArray:
-							return base.splice(key as any, 1)
+							return base.splice(key, 1)
 						case ArchtypeMap:
 							return base.delete(key)
 						case ArchtypeSet:
@@ -259,15 +216,9 @@ export function enablePatches() {
 					die(17, op)
 			}
 		})
-
 		return draft
 	}
-
-	// optimize: this is quite a performance hit, can we detect intelligently when it is needed?
-	// E.g. auto-draft when new objects from outside are assigned and modified?
-	// (See failing test when deepClone just returns obj)
-	function deepClonePatchValue<T>(obj: T): T
-	function deepClonePatchValue(obj: any) {
+	function deepClonePatchValue(obj) {
 		if (!obj || typeof obj !== "object") return obj
 		if (Array.isArray(obj)) return obj.map(deepClonePatchValue)
 		if (isMap(obj))
@@ -279,13 +230,11 @@ export function enablePatches() {
 		for (const key in obj) cloned[key] = deepClonePatchValue(obj[key])
 		return cloned
 	}
-
-	function clonePatchValueIfNeeded<T>(obj: T): T {
+	function clonePatchValueIfNeeded(obj) {
 		if (isDraft(obj)) {
 			return deepClonePatchValue(obj)
 		} else return obj
 	}
-
 	loadPlugin("Patches", {
 		applyPatches_,
 		generatePatches_,

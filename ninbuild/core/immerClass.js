@@ -1,15 +1,7 @@
 import {
-	IProduceWithPatches,
-	IProduce,
-	ImmerState,
-	Drafted,
 	isDraftable,
 	processResult,
-	Patch,
-	Objectish,
 	DRAFT_STATE,
-	Draft,
-	PatchListener,
 	isDraft,
 	isMap,
 	isSet,
@@ -28,29 +20,28 @@ import {
 	current,
 	__DEV__
 } from "../internal.js"
-
-interface ProducersFns {
-	produce: IProduce
-	produceWithPatches: IProduceWithPatches
-}
-
-export class Immer implements ProducersFns {
-	useProxies_: boolean = hasProxies
-
-	autoFreeze_: boolean = __DEV__ ? true /* istanbul ignore next */ : !isMinified
-
-	constructor(config?: {useProxies?: boolean; autoFreeze?: boolean}) {
-		if (typeof config?.useProxies === "boolean")
-			this.setUseProxies(config!.useProxies)
-		if (typeof config?.autoFreeze === "boolean") {
-			this.setAutoFreeze(config!.autoFreeze)
+export class Immer {
+	constructor(config) {
+		this.useProxies_ = hasProxies
+		this.autoFreeze_ = __DEV__ ? true /* istanbul ignore next */ : !isMinified
+		if (
+			typeof (config === null || config === void 0
+				? void 0
+				: config.useProxies) === "boolean"
+		)
+			this.setUseProxies(config.useProxies)
+		if (
+			typeof (config === null || config === void 0
+				? void 0
+				: config.autoFreeze) === "boolean"
+		) {
+			this.setAutoFreeze(config.autoFreeze)
 		} else {
 			this.setAutoFreeze(true)
 		}
 		this.produce = this.produce.bind(this)
 		this.produceWithPatches = this.produceWithPatches.bind(this)
 	}
-
 	/**
 	 * The `produce` function takes a value and a "recipe function" (whose
 	 * return value often depends on the base state). The recipe function is
@@ -70,28 +61,20 @@ export class Immer implements ProducersFns {
 	 * @param {Function} patchListener - optional function that will be called with all the patches produced here
 	 * @returns {any} a new state, or the initial state if nothing was modified
 	 */
-	produce(base: any, recipe?: any, patchListener?: any) {
+	produce(base, recipe, patchListener) {
 		// curried invocation
 		if (typeof base === "function" && typeof recipe !== "function") {
 			const defaultBase = recipe
 			recipe = base
-
 			const self = this
-			return function curriedProduce(
-				this: any,
-				base = defaultBase,
-				...args: any[]
-			) {
-				return self.produce(base, (draft: Drafted) => recipe.call(this, draft, ...args)) // prettier-ignore
+			return function curriedProduce(base = defaultBase, ...args) {
+				return self.produce(base, (draft) => recipe.call(this, draft, ...args)); // prettier-ignore
 			}
 		}
-
 		if (typeof recipe !== "function") die(6)
 		if (patchListener !== undefined && typeof patchListener !== "function")
 			die(7)
-
 		let result
-
 		// Only plain objects, arrays, and "immerable classes" are drafted.
 		if (isDraftable(base)) {
 			const scope = enterScope(this)
@@ -127,36 +110,29 @@ export class Immer implements ProducersFns {
 			return result
 		} else die(21, base)
 	}
-
-	produceWithPatches(arg1: any, arg2?: any, arg3?: any): any {
+	produceWithPatches(arg1, arg2, arg3) {
 		if (typeof arg1 === "function") {
-			return (state: any, ...args: any[]) =>
-				this.produceWithPatches(state, (draft: any) => arg1(draft, ...args))
+			return (state, ...args) =>
+				this.produceWithPatches(state, draft => arg1(draft, ...args))
 		}
-
-		let patches: Patch[], inversePatches: Patch[]
-		const nextState = this.produce(arg1, arg2, (p: Patch[], ip: Patch[]) => {
+		let patches, inversePatches
+		const nextState = this.produce(arg1, arg2, (p, ip) => {
 			patches = p
 			inversePatches = ip
 		})
-		return [nextState, patches!, inversePatches!]
+		return [nextState, patches, inversePatches]
 	}
-
-	createDraft<T extends Objectish>(base: T): Draft<T> {
+	createDraft(base) {
 		if (!isDraftable(base)) die(8)
 		if (isDraft(base)) base = current(base)
 		const scope = enterScope(this)
 		const proxy = createProxy(this, base, undefined)
 		proxy[DRAFT_STATE].isManual_ = true
 		leaveScope(scope)
-		return proxy as any
+		return proxy
 	}
-
-	finishDraft<D extends Draft<any>>(
-		draft: D,
-		patchListener?: PatchListener
-	): D extends Draft<infer T> ? T : never {
-		const state: ImmerState = draft && (draft as any)[DRAFT_STATE]
+	finishDraft(draft, patchListener) {
+		const state = draft && draft[DRAFT_STATE]
 		if (__DEV__) {
 			if (!state || !state.isManual_) die(9)
 			if (state.finalized_) die(10)
@@ -165,33 +141,30 @@ export class Immer implements ProducersFns {
 		usePatchesInScope(scope, patchListener)
 		return processResult(undefined, scope)
 	}
-
 	/**
 	 * Pass true to automatically freeze all copies created by Immer.
 	 *
 	 * By default, auto-freezing is disabled in production.
 	 */
-	setAutoFreeze(value: boolean) {
+	setAutoFreeze(value) {
 		this.autoFreeze_ = value
 	}
-
 	/**
 	 * Pass true to use the ES2015 `Proxy` class when creating drafts, which is
 	 * always faster than using ES5 proxies.
 	 *
 	 * By default, feature detection is used, so calling this is rarely necessary.
 	 */
-	setUseProxies(value: boolean) {
+	setUseProxies(value) {
 		if (value && !hasProxies) {
 			die(20)
 		}
 		this.useProxies_ = value
 	}
-
-	applyPatches(base: Objectish, patches: Patch[]) {
+	applyPatches(base, patches) {
 		// If a patch replaces the entire state, take that replacement as base
 		// before applying patches
-		let i: number
+		let i
 		for (i = patches.length - 1; i >= 0; i--) {
 			const patch = patches[i]
 			if (patch.path.length === 0 && patch.op === "replace") {
@@ -199,33 +172,26 @@ export class Immer implements ProducersFns {
 				break
 			}
 		}
-
 		const applyPatchesImpl = getPlugin("Patches").applyPatches_
 		if (isDraft(base)) {
 			// N.B: never hits if some patch a replacement, patches are never drafts
 			return applyPatchesImpl(base, patches)
 		}
 		// Otherwise, produce a copy of the base state.
-		return this.produce(base, (draft: Drafted) =>
+		return this.produce(base, draft =>
 			applyPatchesImpl(draft, patches.slice(i + 1))
 		)
 	}
 }
-
-export function createProxy<T extends Objectish>(
-	immer: Immer,
-	value: T,
-	parent?: ImmerState
-): Drafted<T, ImmerState> {
+export function createProxy(immer, value, parent) {
 	// precondition: createProxy should be guarded by isDraftable, so we know we can safely draft
-	const draft: Drafted = isMap(value)
+	const draft = isMap(value)
 		? getPlugin("MapSet").proxyMap_(value, parent)
 		: isSet(value)
 		? getPlugin("MapSet").proxySet_(value, parent)
 		: immer.useProxies_
 		? createProxyProxy(value, parent)
 		: getPlugin("ES5").createES5Proxy_(value, parent)
-
 	const scope = parent ? parent.scope_ : getCurrentScope()
 	scope.drafts_.push(draft)
 	return draft

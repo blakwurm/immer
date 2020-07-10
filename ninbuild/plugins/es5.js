@@ -1,8 +1,4 @@
 import {
-	ImmerState,
-	Drafted,
-	ES5ArrayState,
-	ES5ObjectState,
 	each,
 	has,
 	isDraft,
@@ -10,7 +6,6 @@ import {
 	DRAFT_STATE,
 	is,
 	loadPlugin,
-	ImmerScope,
 	ProxyTypeES5Array,
 	ProxyTypeES5Object,
 	getCurrentScope,
@@ -21,40 +16,29 @@ import {
 	getOwnPropertyDescriptors,
 	__DEV__
 } from "../internal.js"
-
-type ES5State = ES5ArrayState | ES5ObjectState
-
 export function enableES5() {
-	function willFinalizeES5_(
-		scope: ImmerScope,
-		result: any,
-		isReplaced: boolean
-	) {
+	function willFinalizeES5_(scope, result, isReplaced) {
 		if (!isReplaced) {
 			if (scope.patches_) {
-				markChangesRecursively(scope.drafts_![0])
+				markChangesRecursively(scope.drafts_[0])
 			}
 			// This is faster when we don't care about which attributes changed.
 			markChangesSweep(scope.drafts_)
 		}
 		// When a child draft is returned, look for changes.
-		else if (
-			isDraft(result) &&
-			(result[DRAFT_STATE] as ES5State).scope_ === scope
-		) {
+		else if (isDraft(result) && result[DRAFT_STATE].scope_ === scope) {
 			markChangesSweep(scope.drafts_)
 		}
 	}
-
-	function createES5Draft(isArray: boolean, base: any) {
+	function createES5Draft(isArray, base) {
 		// Create a new object / array, where each own property is trapped with an accessor
 		const descriptors = getOwnPropertyDescriptors(base)
 		// Descriptors we want to skip:
 		if (isArray) delete descriptors.length
-		delete descriptors[DRAFT_STATE as any]
+		delete descriptors[DRAFT_STATE]
 		const keys = ownKeys(descriptors)
 		for (let i = 0; i < keys.length; i++) {
-			const key: any = keys[i]
+			const key = keys[i]
 			descriptors[key] = proxyProperty(
 				key,
 				isArray || !!descriptors[key].enumerable
@@ -68,16 +52,11 @@ export function enableES5() {
 			return Object.create(Object.getPrototypeOf(base), descriptors)
 		}
 	}
-
-	function createES5Proxy_<T>(
-		base: T,
-		parent?: ImmerState
-	): Drafted<T, ES5ObjectState | ES5ArrayState> {
+	function createES5Proxy_(base, parent) {
 		const isArray = Array.isArray(base)
 		const draft = createES5Draft(isArray, base)
-
-		const state: ES5ObjectState | ES5ArrayState = {
-			type_: isArray ? ProxyTypeES5Array : (ProxyTypeES5Object as any),
+		const state = {
+			type_: isArray ? ProxyTypeES5Array : ProxyTypeES5Object,
 			scope_: parent ? parent.scope_ : getCurrentScope(),
 			modified_: false,
 			finalized_: false,
@@ -91,7 +70,6 @@ export function enableES5() {
 			revoked_: false,
 			isManual_: false
 		}
-
 		Object.defineProperty(draft, DRAFT_STATE, {
 			value: state,
 			// enumerable: false <- the default
@@ -99,15 +77,10 @@ export function enableES5() {
 		})
 		return draft
 	}
-
 	// property descriptors are recycled to make sure we don't create a get and set closure per property,
 	// but share them all instead
-	const descriptors: {[prop: string]: PropertyDescriptor} = {}
-
-	function proxyProperty(
-		prop: string | number,
-		enumerable: boolean
-	): PropertyDescriptor {
+	const descriptors = {}
+	function proxyProperty(prop, enumerable) {
 		let desc = descriptors[prop]
 		if (desc) {
 			desc.enumerable = enumerable
@@ -115,13 +88,13 @@ export function enableES5() {
 			descriptors[prop] = desc = {
 				configurable: true,
 				enumerable,
-				get(this: any) {
+				get() {
 					const state = this[DRAFT_STATE]
 					if (__DEV__) assertUnrevoked(state)
 					// @ts-ignore
 					return objectTraps.get(state, prop)
 				},
-				set(this: any, value) {
+				set(value) {
 					const state = this[DRAFT_STATE]
 					if (__DEV__) assertUnrevoked(state)
 					// @ts-ignore
@@ -131,15 +104,14 @@ export function enableES5() {
 		}
 		return desc
 	}
-
 	// This looks expensive, but only proxies are visited, and only objects without known changes are scanned.
-	function markChangesSweep(drafts: Drafted<any, ImmerState>[]) {
+	function markChangesSweep(drafts) {
 		// The natural order of drafts in the `scope` array is based on when they
 		// were accessed. By processing drafts in reverse natural order, we have a
 		// better chance of processing leaf nodes first. When a leaf node is known to
 		// have changed, we can avoid any traversal of its ancestor nodes.
 		for (let i = drafts.length - 1; i >= 0; i--) {
-			const state: ES5State = drafts[i][DRAFT_STATE]
+			const state = drafts[i][DRAFT_STATE]
 			if (!state.modified_) {
 				switch (state.type_) {
 					case ProxyTypeES5Array:
@@ -152,10 +124,9 @@ export function enableES5() {
 			}
 		}
 	}
-
-	function markChangesRecursively(object: any) {
+	function markChangesRecursively(object) {
 		if (!object || typeof object !== "object") return
-		const state: ES5State | undefined = object[DRAFT_STATE]
+		const state = object[DRAFT_STATE]
 		if (!state) return
 		const {base_, draft_, assigned_, type_} = state
 		if (type_ === ProxyTypeES5Object) {
@@ -164,9 +135,9 @@ export function enableES5() {
 			// unnecessary work.
 			// also: probably we can store the information we detect here, to speed up tree finalization!
 			each(draft_, key => {
-				if ((key as any) === DRAFT_STATE) return
+				if (key === DRAFT_STATE) return
 				// The `undefined` check is a fast path for pre-existing keys.
-				if ((base_ as any)[key] === undefined && !has(base_, key)) {
+				if (base_[key] === undefined && !has(base_, key)) {
 					assigned_[key] = true
 					markChanged(state)
 				} else if (!assigned_[key]) {
@@ -183,35 +154,30 @@ export function enableES5() {
 				}
 			})
 		} else if (type_ === ProxyTypeES5Array) {
-			if (hasArrayChanges(state as ES5ArrayState)) {
+			if (hasArrayChanges(state)) {
 				markChanged(state)
 				assigned_.length = true
 			}
-
 			if (draft_.length < base_.length) {
 				for (let i = draft_.length; i < base_.length; i++) assigned_[i] = false
 			} else {
 				for (let i = base_.length; i < draft_.length; i++) assigned_[i] = true
 			}
-
 			// Minimum count is enough, the other parts has been processed.
 			const min = Math.min(draft_.length, base_.length)
-
 			for (let i = 0; i < min; i++) {
 				// Only untouched indices trigger recursion.
 				if (assigned_[i] === undefined) markChangesRecursively(draft_[i])
 			}
 		}
 	}
-
-	function hasObjectChanges(state: ES5ObjectState) {
+	function hasObjectChanges(state) {
 		const {base_, draft_} = state
-
 		// Search for added keys and changed keys. Start at the back, because
 		// non-numeric keys are ordered by time of definition on the object.
 		const keys = ownKeys(draft_)
 		for (let i = keys.length - 1; i >= 0; i--) {
-			const key: any = keys[i]
+			const key = keys[i]
 			if (key === DRAFT_STATE) continue
 			const baseValue = base_[key]
 			// The `undefined` check is a fast path for pre-existing keys.
@@ -222,20 +188,18 @@ export function enableES5() {
 			// descriptor is erased. This branch detects any missed changes.
 			else {
 				const value = draft_[key]
-				const state: ImmerState = value && value[DRAFT_STATE]
+				const state = value && value[DRAFT_STATE]
 				if (state ? state.base_ !== baseValue : !is(value, baseValue)) {
 					return true
 				}
 			}
 		}
-
 		// At this point, no keys were added or changed.
 		// Compare key count to determine if keys were deleted.
-		const baseIsDraft = !!base_[DRAFT_STATE as any]
+		const baseIsDraft = !!base_[DRAFT_STATE]
 		return keys.length !== ownKeys(base_).length + (baseIsDraft ? 0 : 1) // + 1 to correct for DRAFT_STATE
 	}
-
-	function hasArrayChanges(state: ES5ArrayState) {
+	function hasArrayChanges(state) {
 		const {draft_} = state
 		if (draft_.length !== state.base_.length) return true
 		// See #116
@@ -254,17 +218,14 @@ export function enableES5() {
 		// For all other cases, we don't have to compare, as they would have been picked up by the index setters
 		return false
 	}
-
-	function hasChanges_(state: ES5State) {
+	function hasChanges_(state) {
 		return state.type_ === ProxyTypeES5Object
 			? hasObjectChanges(state)
 			: hasArrayChanges(state)
 	}
-
-	function assertUnrevoked(state: any /*ES5State | MapState | SetState*/) {
+	function assertUnrevoked(state /*ES5State | MapState | SetState*/) {
 		if (state.revoked_) die(3, JSON.stringify(latest(state)))
 	}
-
 	loadPlugin("ES5", {
 		createES5Proxy_,
 		willFinalizeES5_,
